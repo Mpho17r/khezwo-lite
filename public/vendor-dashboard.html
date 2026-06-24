@@ -38,11 +38,10 @@
       white-space: nowrap;
     }
     .tab.active { color: #667eea; border-bottom: 3px solid #667eea; }
-    .content { padding: 20px; max-width: 800px; margin: 0 auto; }
+    .content { padding: 20px; max-width: 900px; margin: 0 auto; }
     .tab-content { display: none; }
     .tab-content.active { display: block; }
     
-    /* Cards */
     .card {
       background: white;
       border-radius: 16px;
@@ -52,24 +51,53 @@
     }
     .card h2 { font-size: 18px; margin-bottom: 15px; }
     
-    /* Notification Banner */
-    .notification-banner {
-      background: #fff3e0;
-      border-left: 4px solid #ff9800;
-      padding: 15px;
-      border-radius: 12px;
-      margin-bottom: 15px;
-      display: none;
+    /* Sales Summary */
+    .sales-summary {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 15px;
+      margin-bottom: 20px;
     }
-    .notification-banner .btn-enable {
-      background: #ff9800;
-      color: white;
-      border: none;
-      padding: 8px 20px;
+    .sales-card {
+      background: white;
+      border-radius: 16px;
+      padding: 20px;
+      text-align: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    }
+    .sales-card .amount {
+      font-size: 28px;
+      font-weight: 800;
+      color: #667eea;
+    }
+    .sales-card .label {
+      font-size: 12px;
+      color: #999;
+      margin-top: 5px;
+    }
+    .sales-card .count {
+      font-size: 14px;
+      color: #666;
+      margin-top: 3px;
+    }
+    
+    .period-selector {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 15px;
+    }
+    .period-btn {
+      padding: 8px 16px;
+      border: 2px solid #e0e0e0;
       border-radius: 20px;
+      background: white;
       cursor: pointer;
       font-weight: 600;
-      margin-left: 10px;
+    }
+    .period-btn.active {
+      background: #667eea;
+      color: white;
+      border-color: #667eea;
     }
     
     /* Orders */
@@ -83,6 +111,7 @@
     .order .number { font-weight: 700; color: #667eea; }
     .order .items { margin: 8px 0; font-size: 14px; color: #555; }
     .order .total { font-weight: 700; }
+    .order .time { font-size: 12px; color: #999; }
     .complete-btn {
       background: #4caf50;
       color: white;
@@ -93,7 +122,6 @@
       margin-top: 8px;
     }
     
-    /* Menu items */
     .menu-grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
@@ -109,9 +137,7 @@
     .menu-item img { width: 80px; height: 80px; border-radius: 10px; object-fit: cover; margin-bottom: 10px; }
     .menu-item .name { font-weight: 600; }
     .menu-item .price { color: #667eea; font-weight: 700; }
-    .menu-item .status { font-size: 11px; color: #999; }
     
-    /* Forms */
     .form-group { margin-bottom: 15px; }
     .form-group label { display: block; font-weight: 600; margin-bottom: 5px; font-size: 14px; }
     .form-group input, .form-group textarea { width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 10px; }
@@ -126,14 +152,34 @@
     }
     .btn-secondary { background: #e0e0e0; color: #333; }
     
-    /* QR Code */
     .qr-container { text-align: center; padding: 20px; }
     .qr-container img { max-width: 200px; border-radius: 16px; }
     
     .empty-state { text-align: center; padding: 40px; color: #999; }
     .empty-state .icon { font-size: 48px; margin-bottom: 15px; }
     
-    /* Sound test */
+    .notification-banner {
+      background: #fff3e0;
+      border-left: 4px solid #ff9800;
+      padding: 15px;
+      border-radius: 12px;
+      margin: 0 20px 15px 20px;
+      display: none;
+      max-width: 900px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .notification-banner .btn-enable {
+      background: #ff9800;
+      color: white;
+      border: none;
+      padding: 8px 20px;
+      border-radius: 20px;
+      cursor: pointer;
+      font-weight: 600;
+      margin-left: 10px;
+    }
+    
     .sound-test-btn {
       background: #4caf50;
       color: white;
@@ -144,7 +190,8 @@
       margin-top: 10px;
     }
     
-    @media (max-width: 480px) {
+    @media (max-width: 600px) {
+      .sales-summary { grid-template-columns: repeat(2, 1fr); }
       .menu-grid { grid-template-columns: repeat(2, 1fr); }
     }
   </style>
@@ -155,12 +202,9 @@
     <div><span id="businessName">Loading...</span> <a href="/api/vendor/logout" class="logout">Logout</a></div>
   </div>
   
-  <!-- Notification Banner -->
-  <div style="padding: 0 20px; max-width: 800px; margin: 0 auto;">
-    <div class="notification-banner" id="notificationBanner">
-      <span>🔔 Enable notifications to hear new orders</span>
-      <button class="btn-enable" onclick="enableNotifications()">Enable Notifications</button>
-    </div>
+  <div class="notification-banner" id="notificationBanner">
+    <span>🔔 Enable notifications to hear new orders</span>
+    <button class="btn-enable" onclick="enableNotifications()">Enable</button>
   </div>
   
   <div class="tab-bar">
@@ -174,9 +218,17 @@
   <div class="content">
     <!-- Orders Tab -->
     <div id="orders-tab" class="tab-content active">
+      <!-- Sales Summary -->
+      <div class="sales-summary" id="salesSummary">
+        <div class="sales-card"><div class="amount" id="todaySales">R0</div><div class="label">Today</div><div class="count" id="todayOrders">0 orders</div></div>
+        <div class="sales-card"><div class="amount" id="weekSales">R0</div><div class="label">This Week</div><div class="count" id="weekOrders">0 orders</div></div>
+        <div class="sales-card"><div class="amount" id="monthSales">R0</div><div class="label">This Month</div><div class="count" id="monthOrders">0 orders</div></div>
+        <div class="sales-card"><div class="amount" id="totalSales">R0</div><div class="label">All Time</div><div class="count" id="totalOrdersCount">0 orders</div></div>
+      </div>
+      
       <div class="card">
         <h2>Live Orders</h2>
-        <button class="sound-test-btn" onclick="testSound()">🔊 Test Notification Sound</button>
+        <button class="sound-test-btn" onclick="testSound()">🔊 Test Sound</button>
         <div id="ordersList" style="margin-top:15px;"><div class="empty-state"><div class="icon">🛒</div>No pending orders</div></div>
       </div>
     </div>
@@ -237,30 +289,26 @@
     let vendorData = null;
     let menuItems = [];
     let orders = [];
+    let allOrders = [];
+    let lastOrderCount = 0;
     let notificationPermission = false;
     let audioContext = null;
-    let lastOrderCount = 0;
+    let currentPeriod = 'all';
     
     // ============= NOTIFICATIONS =============
     
     function playNotificationSound() {
       try {
-        // Use Web Audio API to generate a beep sound
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
         const oscillator = audioContext.createOscillator();
         const gainNode = audioContext.createGain();
-        
         oscillator.connect(gainNode);
         gainNode.connect(audioContext.destination);
-        
         oscillator.frequency.value = 800;
         oscillator.type = 'sine';
         gainNode.gain.value = 0.3;
-        
         oscillator.start();
         setTimeout(() => { oscillator.stop(); }, 300);
-        
-        // Second beep
         setTimeout(() => {
           const osc2 = audioContext.createOscillator();
           const gain2 = audioContext.createGain();
@@ -272,25 +320,14 @@
           osc2.start();
           setTimeout(() => { osc2.stop(); }, 300);
         }, 350);
-      } catch(e) {
-        console.log('Audio not supported');
-      }
+      } catch(e) {}
     }
     
-    function testSound() {
-      playNotificationSound();
-      showNotification('🔔 Test Notification', 'This is a test alert!');
-    }
+    function testSound() { playNotificationSound(); }
     
     function showNotification(title, body) {
       if ('Notification' in window && Notification.permission === 'granted') {
-        new Notification(title, {
-          body: body,
-          icon: '/images/logo.png',
-          sound: true
-        });
-      } else {
-        alert('🔔 ' + title + '\n' + body);
+        new Notification(title, { body: body, icon: '/images/logo.png' });
       }
     }
     
@@ -300,46 +337,112 @@
           if (permission === 'granted') {
             notificationPermission = true;
             document.getElementById('notificationBanner').style.display = 'none';
-            showNotification('✅ Notifications Enabled', 'You will now hear when new orders arrive!');
-          } else {
-            alert('Please allow notifications in your browser settings.');
           }
         });
-      } else {
-        alert('Notifications not supported in this browser.');
       }
+    }
+    
+    if ('Notification' in window && Notification.permission === 'default') {
+      document.getElementById('notificationBanner').style.display = 'block';
+    } else if ('Notification' in window && Notification.permission === 'granted') {
+      notificationPermission = true;
+      document.getElementById('notificationBanner').style.display = 'none';
+    }
+    
+    // ============= SALES CALCULATIONS =============
+    
+    function calculateSales(orders) {
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const weekStart = new Date(today);
+      weekStart.setDate(today.getDate() - today.getDay());
+      const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+      
+      let todayTotal = 0, todayCount = 0;
+      let weekTotal = 0, weekCount = 0;
+      let monthTotal = 0, monthCount = 0;
+      let allTotal = 0, allCount = 0;
+      
+      orders.forEach(order => {
+        const orderDate = new Date(order.created_at);
+        const amount = parseFloat(order.total);
+        
+        allTotal += amount;
+        allCount++;
+        
+        if (orderDate >= today) {
+          todayTotal += amount;
+          todayCount++;
+        }
+        if (orderDate >= weekStart) {
+          weekTotal += amount;
+          weekCount++;
+        }
+        if (orderDate >= monthStart) {
+          monthTotal += amount;
+          monthCount++;
+        }
+      });
+      
+      return {
+        today: { total: todayTotal, count: todayCount },
+        week: { total: weekTotal, count: weekCount },
+        month: { total: monthTotal, count: monthCount },
+        all: { total: allTotal, count: allCount }
+      };
+    }
+    
+    function updateSalesSummary() {
+      const completedOrders = allOrders.filter(o => o.status === 'completed');
+      const sales = calculateSales(completedOrders);
+      
+      document.getElementById('todaySales').textContent = 'R' + sales.today.total.toFixed(2);
+      document.getElementById('todayOrders').textContent = sales.today.count + ' orders';
+      document.getElementById('weekSales').textContent = 'R' + sales.week.total.toFixed(2);
+      document.getElementById('weekOrders').textContent = sales.week.count + ' orders';
+      document.getElementById('monthSales').textContent = 'R' + sales.month.total.toFixed(2);
+      document.getElementById('monthOrders').textContent = sales.month.count + ' orders';
+      document.getElementById('totalSales').textContent = 'R' + sales.all.total.toFixed(2);
+      document.getElementById('totalOrdersCount').textContent = sales.all.count + ' orders';
     }
     
     // ============= DATA LOADING =============
     
     async function loadData() {
-      const res = await fetch('/api/vendor/data');
-      const data = await res.json();
-      if (res.ok) {
-        vendorData = data.vendor;
-        menuItems = data.menu_items || [];
-        orders = data.orders || [];
-        document.getElementById('businessName').textContent = vendorData.business_name || 'Business';
-        document.getElementById('profileName').value = vendorData.business_name || '';
-        document.getElementById('profileOwner').value = vendorData.owner_name || '';
-        document.getElementById('profilePhone').value = vendorData.phone || '';
-        
-        // Check for new orders
-        const currentOrderCount = orders.length;
-        if (currentOrderCount > lastOrderCount && lastOrderCount > 0) {
-          // New order detected!
-          playNotificationSound();
-          showNotification(
-            '🆕 New Order!',
-            `You have ${currentOrderCount - lastOrderCount} new order(s)`
-          );
+      try {
+        const res = await fetch('/api/vendor/data');
+        const data = await res.json();
+        if (res.ok) {
+          vendorData = data.vendor;
+          menuItems = data.menu_items || [];
+          orders = data.orders || [];
+          
+          // Load all orders for history
+          const historyRes = await fetch('/api/vendor/order-history');
+          const historyData = await historyRes.json();
+          allOrders = [...orders, ...(historyData || [])];
+          
+          document.getElementById('businessName').textContent = vendorData.business_name || 'Business';
+          document.getElementById('profileName').value = vendorData.business_name || '';
+          document.getElementById('profileOwner').value = vendorData.owner_name || '';
+          document.getElementById('profilePhone').value = vendorData.phone || '';
+          
+          // Check for new orders
+          const pendingCount = orders.length;
+          if (pendingCount > lastOrderCount && lastOrderCount > 0) {
+            playNotificationSound();
+            showNotification('🆕 New Order!', `You have ${pendingCount - lastOrderCount} new order(s)`);
+          }
+          lastOrderCount = pendingCount;
+          
+          renderOrders();
+          renderMenu();
+          loadHistory();
+          loadQR();
+          updateSalesSummary();
         }
-        lastOrderCount = currentOrderCount;
-        
-        renderOrders();
-        renderMenu();
-        loadHistory();
-        loadQR();
+      } catch (err) {
+        console.error('Error loading data:', err);
       }
     }
     
@@ -354,9 +457,9 @@
         return `
           <div class="order">
             <div class="number">Order #${order.order_number}</div>
-            <div><strong>${order.customer_name || 'Anonymous'}</strong> · ${new Date(order.created_at).toLocaleString()}</div>
+            <div><strong>${order.customer_name || 'Anonymous'}</strong> · <span class="time">${new Date(order.created_at).toLocaleString()}</span></div>
             <div class="items">${items.map(i => `${i.name} x${i.quantity}`).join(', ')}</div>
-            <div class="total">R${parseFloat(order.total).toFixed(2)}</div>
+            <div class="total">Total: R${parseFloat(order.total).toFixed(2)}</div>
             <button class="complete-btn" onclick="completeOrder(${order.id})">Mark Complete</button>
           </div>
         `;
@@ -374,7 +477,7 @@
           ${item.photo_url ? `<img src="${item.photo_url}">` : '<div style="font-size:40px; padding:20px;">🍽️</div>'}
           <div class="name">${item.name}</div>
           <div class="price">R${parseFloat(item.price).toFixed(2)}</div>
-          <div class="status">${item.is_available ? '✅ Available' : '❌ Unavailable'}</div>
+          <div class="status" style="font-size:11px; color:#999;">${item.is_available ? '✅ Available' : '❌ Unavailable'}</div>
           <button onclick="toggleItem(${item.id}, ${item.is_available})" style="margin-top:8px; font-size:11px; padding:4px 12px; border-radius:8px; border:1px solid #667eea; background:white; color:#667eea; cursor:pointer;">
             ${item.is_available ? 'Out of Stock' : 'Restock'}
           </button>
@@ -397,35 +500,47 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ order_id: orderId, status: 'completed' })
       });
-      if (res.ok) loadData();
+      if (res.ok) {
+        loadData();
+        // Recalculate sales after completion
+        setTimeout(updateSalesSummary, 500);
+      }
     }
     
     async function loadHistory() {
-      const res = await fetch('/api/vendor/order-history');
-      const history = await res.json();
-      const container = document.getElementById('historyList');
-      if (!history || !history.length) {
-        container.innerHTML = '<div class="empty-state"><div class="icon">📜</div>No completed orders</div>';
-        return;
+      try {
+        const res = await fetch('/api/vendor/order-history');
+        const history = await res.json();
+        const container = document.getElementById('historyList');
+        if (!history || !history.length) {
+          container.innerHTML = '<div class="empty-state"><div class="icon">📜</div>No completed orders</div>';
+          return;
+        }
+        container.innerHTML = history.map(order => {
+          const items = JSON.parse(order.items_json);
+          return `
+            <div class="order" style="border-left-color: #999;">
+              <div class="number">Order #${order.order_number}</div>
+              <div><strong>${order.customer_name || 'Anonymous'}</strong> · <span class="time">${new Date(order.created_at).toLocaleString()}</span></div>
+              <div class="items">${items.map(i => `${i.name} x${i.quantity}`).join(', ')}</div>
+              <div class="total">Total: R${parseFloat(order.total).toFixed(2)}</div>
+            </div>
+          `;
+        }).join('');
+      } catch (err) {
+        console.error('Error loading history:', err);
       }
-      container.innerHTML = history.map(order => {
-        const items = JSON.parse(order.items_json);
-        return `
-          <div class="order" style="border-left-color: #999;">
-            <div class="number">Order #${order.order_number}</div>
-            <div>${order.customer_name || 'Anonymous'} · ${new Date(order.created_at).toLocaleString()}</div>
-            <div class="items">${items.map(i => `${i.name} x${i.quantity}`).join(', ')}</div>
-            <div class="total">R${parseFloat(order.total).toFixed(2)}</div>
-          </div>
-        `;
-      }).join('');
     }
     
     async function loadQR() {
-      const res = await fetch('/api/vendor/qr-code');
-      const data = await res.json();
-      if (data.success) {
-        document.getElementById('qrContainer').innerHTML = `<img id="qrImg" src="${data.qrBase64}">`;
+      try {
+        const res = await fetch('/api/vendor/qr-code');
+        const data = await res.json();
+        if (data.success) {
+          document.getElementById('qrContainer').innerHTML = `<img id="qrImg" src="${data.qrBase64}">`;
+        }
+      } catch (err) {
+        console.error('Error loading QR:', err);
       }
     }
     
@@ -469,7 +584,6 @@
       loadData();
     });
     
-    // Tab switching
     document.querySelectorAll('.tab').forEach(tab => {
       tab.addEventListener('click', () => {
         document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -481,16 +595,8 @@
       });
     });
     
-    // Check notification permission on load
-    if ('Notification' in window && Notification.permission === 'default') {
-      document.getElementById('notificationBanner').style.display = 'block';
-    } else if ('Notification' in window && Notification.permission === 'granted') {
-      notificationPermission = true;
-      document.getElementById('notificationBanner').style.display = 'none';
-    }
-    
+    // Initial load and auto-refresh
     loadData();
-    // Auto-refresh orders every 8 seconds (faster for notifications)
     setInterval(() => {
       if (document.querySelector('.tab.active').dataset.tab === 'orders') loadData();
     }, 8000);
