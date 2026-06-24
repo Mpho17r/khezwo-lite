@@ -1,4 +1,3 @@
-
 const express = require('express');
 const session = require('express-session');
 const multer = require('multer');
@@ -104,9 +103,9 @@ async function initDatabase() {
             ON CONFLICT (username) DO NOTHING
         `, [hashedPassword]);
 
-        // Check if any vendors exist
-        const vendorCheck = await client.query(`SELECT COUNT(*) FROM vendors`);
-        console.log(`📊 Vendors in database: ${vendorCheck.rows[0].count}`);
+        // Check vendors
+        const vendorCheck = await client.query(`SELECT id, business_name FROM vendors LIMIT 5`);
+        console.log(`📊 Vendors in database:`, vendorCheck.rows);
 
         console.log('✅ Lite tables ready in PostgreSQL');
     } catch (err) {
@@ -148,16 +147,21 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// ============= CUSTOMER MENU ROUTE =============
+// ============= CUSTOMER MENU ROUTE (FIXED) =============
 app.get('/menu/:vendorId', async (req, res) => {
     try {
         const vendorId = req.params.vendorId;
         console.log(`🔍 Looking for vendor ID: ${vendorId}`);
         
+        // First, check if the vendor exists
         const vendor = await queryOne(`SELECT * FROM vendors WHERE id = $1`, [vendorId]);
         
         if (!vendor) {
-            console.log(`❌ Vendor ${vendorId} not found`);
+            console.log(`❌ Vendor ${vendorId} NOT found in database`);
+            // Let's check all vendors to see what IDs exist
+            const allVendors = await query(`SELECT id, business_name FROM vendors LIMIT 10`);
+            console.log('📊 Existing vendor IDs:', allVendors.rows.map(v => v.id).join(', '));
+            
             return res.status(404).send(`
                 <!DOCTYPE html>
                 <html>
@@ -168,12 +172,17 @@ app.get('/menu/:vendorId', async (req, res) => {
                         .card { max-width: 400px; margin: 0 auto; background: white; padding: 40px; border-radius: 20px; box-shadow: 0 5px 20px rgba(0,0,0,0.1); }
                         h1 { color: #667eea; }
                         .btn { display: inline-block; background: #667eea; color: white; padding: 12px 30px; border-radius: 30px; text-decoration: none; margin-top: 20px; }
+                        .vendor-list { text-align: left; margin-top: 20px; padding: 10px; background: #f8f9fa; border-radius: 10px; font-size: 14px; }
                     </style>
                 </head>
                 <body>
                     <div class="card">
                         <h1>🍽️ Vendor Not Found</h1>
                         <p>The QR code you scanned is not valid or the vendor is no longer active.</p>
+                        <div class="vendor-list">
+                            <p><strong>Available vendors in this system:</strong></p>
+                            <p>${allVendors.rows.map(v => `ID ${v.id}: ${v.business_name}`).join('<br>') || 'No vendors found'}</p>
+                        </div>
                         <a href="/" class="btn">Go Home</a>
                     </div>
                 </body>
@@ -189,7 +198,7 @@ app.get('/menu/:vendorId', async (req, res) => {
     }
 });
 
-// ============= API ROUTES =============
+// ============= VENDOR SIGNUP =============
 
 // Vendor Signup
 app.post('/api/vendor/signup', async (req, res) => {
