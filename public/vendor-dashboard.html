@@ -52,6 +52,26 @@
     }
     .card h2 { font-size: 18px; margin-bottom: 15px; }
     
+    /* Notification Banner */
+    .notification-banner {
+      background: #fff3e0;
+      border-left: 4px solid #ff9800;
+      padding: 15px;
+      border-radius: 12px;
+      margin-bottom: 15px;
+      display: none;
+    }
+    .notification-banner .btn-enable {
+      background: #ff9800;
+      color: white;
+      border: none;
+      padding: 8px 20px;
+      border-radius: 20px;
+      cursor: pointer;
+      font-weight: 600;
+      margin-left: 10px;
+    }
+    
     /* Orders */
     .order {
       border-left: 4px solid #667eea;
@@ -113,6 +133,17 @@
     .empty-state { text-align: center; padding: 40px; color: #999; }
     .empty-state .icon { font-size: 48px; margin-bottom: 15px; }
     
+    /* Sound test */
+    .sound-test-btn {
+      background: #4caf50;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 8px;
+      cursor: pointer;
+      margin-top: 10px;
+    }
+    
     @media (max-width: 480px) {
       .menu-grid { grid-template-columns: repeat(2, 1fr); }
     }
@@ -120,8 +151,16 @@
 </head>
 <body>
   <div class="header">
-    <h1>KheZwo Lite</h1>
+    <h1>🔔 KheZwo Lite</h1>
     <div><span id="businessName">Loading...</span> <a href="/api/vendor/logout" class="logout">Logout</a></div>
+  </div>
+  
+  <!-- Notification Banner -->
+  <div style="padding: 0 20px; max-width: 800px; margin: 0 auto;">
+    <div class="notification-banner" id="notificationBanner">
+      <span>🔔 Enable notifications to hear new orders</span>
+      <button class="btn-enable" onclick="enableNotifications()">Enable Notifications</button>
+    </div>
   </div>
   
   <div class="tab-bar">
@@ -137,7 +176,8 @@
     <div id="orders-tab" class="tab-content active">
       <div class="card">
         <h2>Live Orders</h2>
-        <div id="ordersList"><div class="empty-state"><div class="icon">🛒</div>No pending orders</div></div>
+        <button class="sound-test-btn" onclick="testSound()">🔊 Test Notification Sound</button>
+        <div id="ordersList" style="margin-top:15px;"><div class="empty-state"><div class="icon">🛒</div>No pending orders</div></div>
       </div>
     </div>
     
@@ -197,6 +237,80 @@
     let vendorData = null;
     let menuItems = [];
     let orders = [];
+    let notificationPermission = false;
+    let audioContext = null;
+    let lastOrderCount = 0;
+    
+    // ============= NOTIFICATIONS =============
+    
+    function playNotificationSound() {
+      try {
+        // Use Web Audio API to generate a beep sound
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        oscillator.frequency.value = 800;
+        oscillator.type = 'sine';
+        gainNode.gain.value = 0.3;
+        
+        oscillator.start();
+        setTimeout(() => { oscillator.stop(); }, 300);
+        
+        // Second beep
+        setTimeout(() => {
+          const osc2 = audioContext.createOscillator();
+          const gain2 = audioContext.createGain();
+          osc2.connect(gain2);
+          gain2.connect(audioContext.destination);
+          osc2.frequency.value = 1000;
+          osc2.type = 'sine';
+          gain2.gain.value = 0.3;
+          osc2.start();
+          setTimeout(() => { osc2.stop(); }, 300);
+        }, 350);
+      } catch(e) {
+        console.log('Audio not supported');
+      }
+    }
+    
+    function testSound() {
+      playNotificationSound();
+      showNotification('🔔 Test Notification', 'This is a test alert!');
+    }
+    
+    function showNotification(title, body) {
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification(title, {
+          body: body,
+          icon: '/images/logo.png',
+          sound: true
+        });
+      } else {
+        alert('🔔 ' + title + '\n' + body);
+      }
+    }
+    
+    function enableNotifications() {
+      if ('Notification' in window) {
+        Notification.requestPermission().then(permission => {
+          if (permission === 'granted') {
+            notificationPermission = true;
+            document.getElementById('notificationBanner').style.display = 'none';
+            showNotification('✅ Notifications Enabled', 'You will now hear when new orders arrive!');
+          } else {
+            alert('Please allow notifications in your browser settings.');
+          }
+        });
+      } else {
+        alert('Notifications not supported in this browser.');
+      }
+    }
+    
+    // ============= DATA LOADING =============
     
     async function loadData() {
       const res = await fetch('/api/vendor/data');
@@ -209,6 +323,19 @@
         document.getElementById('profileName').value = vendorData.business_name || '';
         document.getElementById('profileOwner').value = vendorData.owner_name || '';
         document.getElementById('profilePhone').value = vendorData.phone || '';
+        
+        // Check for new orders
+        const currentOrderCount = orders.length;
+        if (currentOrderCount > lastOrderCount && lastOrderCount > 0) {
+          // New order detected!
+          playNotificationSound();
+          showNotification(
+            '🆕 New Order!',
+            `You have ${currentOrderCount - lastOrderCount} new order(s)`
+          );
+        }
+        lastOrderCount = currentOrderCount;
+        
         renderOrders();
         renderMenu();
         loadHistory();
@@ -354,11 +481,19 @@
       });
     });
     
+    // Check notification permission on load
+    if ('Notification' in window && Notification.permission === 'default') {
+      document.getElementById('notificationBanner').style.display = 'block';
+    } else if ('Notification' in window && Notification.permission === 'granted') {
+      notificationPermission = true;
+      document.getElementById('notificationBanner').style.display = 'none';
+    }
+    
     loadData();
-    // Auto-refresh orders every 10 seconds
+    // Auto-refresh orders every 8 seconds (faster for notifications)
     setInterval(() => {
       if (document.querySelector('.tab.active').dataset.tab === 'orders') loadData();
-    }, 10000);
+    }, 8000);
   </script>
 </body>
 </html>
