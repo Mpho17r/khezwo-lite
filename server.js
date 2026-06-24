@@ -28,7 +28,7 @@ async function initDatabase() {
     console.log('🔄 Initializing database...');
     const client = await pool.connect();
     try {
-        // FIRST: Add missing is_active column to sponsor_ads if it doesn't exist
+        // Add is_active column to sponsor_ads if it doesn't exist
         try {
             await client.query(`
                 ALTER TABLE sponsor_ads ADD COLUMN IF NOT EXISTS is_active INTEGER DEFAULT 1
@@ -36,7 +36,6 @@ async function initDatabase() {
             console.log('✅ Added is_active column to sponsor_ads');
         } catch (err) {
             // Table might not exist yet, we'll create it below
-            console.log('sponsor_ads table may not exist yet, will create...');
         }
 
         // Create vendors table
@@ -97,7 +96,7 @@ async function initDatabase() {
         `);
         console.log('✅ admin_users table ready');
 
-        // Create sponsor_ads table (with is_active column)
+        // Create sponsor_ads table
         await client.query(`
             CREATE TABLE IF NOT EXISTS sponsor_ads (
                 id SERIAL PRIMARY KEY,
@@ -109,6 +108,22 @@ async function initDatabase() {
             )
         `);
         console.log('✅ sponsor_ads table ready');
+
+        // ============ NEW: FEEDBACK TABLE ============
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS feedback (
+                id SERIAL PRIMARY KEY,
+                vendor_id INTEGER REFERENCES vendors(id),
+                customer_name TEXT,
+                customer_email TEXT,
+                customer_phone TEXT,
+                message TEXT NOT NULL,
+                rating INTEGER DEFAULT 5,
+                status TEXT DEFAULT 'new',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        console.log('✅ feedback table ready');
 
         // Create default admin user
         const bcrypt = require('bcrypt');
@@ -491,6 +506,63 @@ app.get('/api/menu/:vendorId', async (req, res) => {
     }
 });
 
+// ============ FEEDBACK ROUTES ============
+
+// Submit feedback (from customer or vendor)
+app.post('/api/feedback', async (req, res) => {
+    const { vendor_id, customer_name, customer_email, customer_phone, message, rating } = req.body;
+    
+    if (!message) {
+        return res.status(400).json({ error: 'Message is required' });
+    }
+    
+    try {
+        await query(
+            `INSERT INTO feedback (vendor_id, customer_name, customer_email, customer_phone, message, rating) 
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [vendor_id || null, customer_name || null, customer_email || null, customer_phone || null, message, rating || 5]
+        );
+        res.json({ success: true, message: 'Thank you for your feedback!' });
+    } catch (err) {
+        console.error('Feedback error:', err);
+        res.status(500).json({ error: 'Failed to submit feedback' });
+    }
+});
+
+// Get feedback (admin only)
+app.get('/api/admin/feedback', async (req, res) => {
+    if (!req.session.admin) return res.status(401).json({ error: 'Unauthorized' });
+    
+    try {
+        const feedback = await query(`
+            SELECT f.*, v.business_name as vendor_name 
+            FROM feedback f
+            LEFT JOIN vendors v ON f.vendor_id = v.id
+            ORDER BY f.created_at DESC
+        `);
+        res.json(feedback.rows || []);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Update feedback status (admin only)
+app.post('/api/admin/feedback/update', async (req, res) => {
+    if (!req.session.admin) return res.status(401).json({ error: 'Unauthorized' });
+    
+    const { feedback_id, status } = req.body;
+    
+    try {
+        await query(
+            `UPDATE feedback SET status = $1 WHERE id = $2`,
+            [status, feedback_id]
+        );
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // Setup admin
 app.post('/api/setup-admin', async (req, res) => {
     const { username, password } = req.body;
@@ -627,15 +699,17 @@ app.get('/api/admin/stats', async (req, res) => {
         const orders = await queryOne(`SELECT COUNT(*) as count FROM orders`);
         const pendingOrders = await queryOne(`SELECT COUNT(*) as count FROM orders WHERE status = 'pending'`);
         const activeAds = await queryOne(`SELECT COUNT(*) as count FROM sponsor_ads WHERE is_active = 1`);
+        const feedbackCount = await queryOne(`SELECT COUNT(*) as count FROM feedback`);
         
         res.json({
             total_vendors: parseInt(vendors?.count) || 0,
             total_orders: parseInt(orders?.count) || 0,
             pending_orders: parseInt(pendingOrders?.count) || 0,
-            active_ads: parseInt(activeAds?.count) || 0
+            active_ads: parseInt(activeAds?.count) || 0,
+            total_feedback: parseInt(feedbackCount?.count) || 0
         });
     } catch (err) {
-        res.json({ total_vendors: 0, total_orders: 0, pending_orders: 0, active_ads: 0 });
+        res.json({ total_vendors: 0, total_orders: 0, pending_orders: 0, active_ads: 0, total_feedback: 0 });
     }
 });
 
