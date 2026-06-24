@@ -1,3 +1,4 @@
+
 const express = require('express');
 const session = require('express-session');
 const multer = require('multer');
@@ -16,8 +17,16 @@ const pool = new Pool({
     ssl: { rejectUnauthorized: false }
 });
 
-// Create tables
+// Helper functions
+const query = (text, params) => pool.query(text, params);
+const queryOne = async (text, params) => {
+    const result = await pool.query(text, params);
+    return result.rows[0] || null;
+};
+
+// Create tables with error handling
 async function initDatabase() {
+    console.log('🔄 Initializing database...');
     const client = await pool.connect();
     try {
         await client.query(`
@@ -33,6 +42,7 @@ async function initDatabase() {
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         `);
+        console.log('✅ vendors table ready');
 
         await client.query(`
             CREATE TABLE IF NOT EXISTS menu_items (
@@ -46,6 +56,7 @@ async function initDatabase() {
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         `);
+        console.log('✅ menu_items table ready');
 
         await client.query(`
             CREATE TABLE IF NOT EXISTS orders (
@@ -61,6 +72,7 @@ async function initDatabase() {
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         `);
+        console.log('✅ orders table ready');
 
         await client.query(`
             CREATE TABLE IF NOT EXISTS admin_users (
@@ -69,6 +81,7 @@ async function initDatabase() {
                 password TEXT NOT NULL
             )
         `);
+        console.log('✅ admin_users table ready');
 
         await client.query(`
             CREATE TABLE IF NOT EXISTS sponsor_ads (
@@ -80,6 +93,7 @@ async function initDatabase() {
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         `);
+        console.log('✅ sponsor_ads table ready');
 
         // Create default admin user
         const bcrypt = require('bcrypt');
@@ -90,22 +104,20 @@ async function initDatabase() {
             ON CONFLICT (username) DO NOTHING
         `, [hashedPassword]);
 
+        // Check if any vendors exist
+        const vendorCheck = await client.query(`SELECT COUNT(*) FROM vendors`);
+        console.log(`📊 Vendors in database: ${vendorCheck.rows[0].count}`);
+
         console.log('✅ Lite tables ready in PostgreSQL');
     } catch (err) {
-        console.error('Database init error:', err.message);
+        console.error('❌ Database init error:', err.message);
     } finally {
         client.release();
     }
 }
 
+// Run init
 initDatabase();
-
-// Helper functions
-const query = (text, params) => pool.query(text, params);
-const queryOne = async (text, params) => {
-    const result = await pool.query(text, params);
-    return result.rows[0] || null;
-};
 
 // Ensure uploads folder exists
 if (!fs.existsSync('./uploads')) fs.mkdirSync('./uploads');
@@ -136,9 +148,48 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-app.get('/menu/:vendorId', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'customer-menu.html'));
+// ============= CUSTOMER MENU ROUTE =============
+app.get('/menu/:vendorId', async (req, res) => {
+    try {
+        const vendorId = req.params.vendorId;
+        console.log(`🔍 Looking for vendor ID: ${vendorId}`);
+        
+        const vendor = await queryOne(`SELECT * FROM vendors WHERE id = $1`, [vendorId]);
+        
+        if (!vendor) {
+            console.log(`❌ Vendor ${vendorId} not found`);
+            return res.status(404).send(`
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Vendor Not Found - KheZwo Lite</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #f5f5f5; }
+                        .card { max-width: 400px; margin: 0 auto; background: white; padding: 40px; border-radius: 20px; box-shadow: 0 5px 20px rgba(0,0,0,0.1); }
+                        h1 { color: #667eea; }
+                        .btn { display: inline-block; background: #667eea; color: white; padding: 12px 30px; border-radius: 30px; text-decoration: none; margin-top: 20px; }
+                    </style>
+                </head>
+                <body>
+                    <div class="card">
+                        <h1>🍽️ Vendor Not Found</h1>
+                        <p>The QR code you scanned is not valid or the vendor is no longer active.</p>
+                        <a href="/" class="btn">Go Home</a>
+                    </div>
+                </body>
+                </html>
+            `);
+        }
+        
+        console.log(`✅ Vendor found: ${vendor.business_name} (ID: ${vendor.id})`);
+        res.sendFile(path.join(__dirname, 'public', 'customer-menu.html'));
+    } catch (err) {
+        console.error('❌ Menu route error:', err);
+        res.status(500).send('Server error');
+    }
 });
+
+// ============= API ROUTES =============
 
 // Vendor Signup
 app.post('/api/vendor/signup', async (req, res) => {
@@ -161,11 +212,13 @@ app.post('/api/vendor/signup', async (req, res) => {
         const qrUrl = `${baseUrl}/menu/${vendorId}`;
         qrcode.toFile(`./uploads/qr_${vendorId}.png`, qrUrl, () => {});
         
+        console.log(`✅ New vendor created: ${business_name} (ID: ${vendorId})`);
         res.json({ success: true, vendor_id: vendorId });
     } catch (err) {
         if (err.constraint === 'vendors_email_key') {
             return res.status(400).json({ error: 'Email already registered' });
         }
+        console.error('❌ Signup error:', err.message);
         res.status(500).json({ error: err.message });
     }
 });
@@ -187,6 +240,7 @@ app.post('/api/vendor/login', async (req, res) => {
         }
         
         req.session.vendor = vendor;
+        console.log(`✅ Vendor logged in: ${vendor.business_name} (ID: ${vendor.id})`);
         res.json({ success: true, redirect: '/vendor-dashboard.html' });
     } catch (err) {
         res.status(500).json({ error: err.message });
