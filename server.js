@@ -564,3 +564,22 @@ app.listen(PORT, () => {
   console.log(`\n📋 Admin: username "admin" | password "admin123"`);
   console.log(`🎉 Ready to go!\n`);
 });
+// Setup admin user
+app.post('/api/setup-admin', async (req, res) => {
+    const { username, password } = req.body;
+    
+    if (!username || !password || password.length < 6) {
+        return res.status(400).json({ error: 'Invalid username or password' });
+    }
+    
+    try {
+        const hashedPassword = await bcrypt.hash(password, 10);
+        await query(
+            'INSERT INTO admin_users (username, password) VALUES ($1, $2) ON CONFLICT (username) DO UPDATE SET password = $2',
+            [username, hashedPassword]
+        );
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
