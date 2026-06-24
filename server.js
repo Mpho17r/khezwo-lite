@@ -9,7 +9,7 @@ const qrcode = require('qrcode');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Simple SQLite database (no PostgreSQL needed for Lite)
+// Simple SQLite database
 const sqlite3 = require('sqlite3').verbose();
 const db = new sqlite3.Database('./khezwo.db');
 
@@ -24,6 +24,7 @@ db.serialize(() => {
       phone TEXT NOT NULL,
       password TEXT NOT NULL,
       logo_url TEXT,
+      is_suspended INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
@@ -212,6 +213,55 @@ app.get('/api/vendor/data', async (req, res) => {
   }
 });
 
+// ============= QR CODE ENDPOINTS =============
+
+app.get('/api/vendor/qr-code', async (req, res) => {
+  if (!req.session.vendor) return res.status(401).json({ error: 'Not logged in' });
+  
+  const vendorId = req.session.vendor.id;
+  const baseUrl = getBaseUrl();
+  const qrUrl = `${baseUrl}/menu/${vendorId}`;
+  
+  try {
+    const qrBase64 = await qrcode.toDataURL(qrUrl, {
+      errorCorrectionLevel: 'H',
+      margin: 2,
+      width: 300
+    });
+    res.json({ success: true, qrBase64: qrBase64 });
+  } catch (err) {
+    console.error('QR generation error:', err);
+    res.status(500).json({ error: 'Failed to generate QR code' });
+  }
+});
+
+app.get('/api/vendor/regenerate-qr', async (req, res) => {
+  if (!req.session.vendor) return res.status(401).json({ error: 'Not logged in' });
+  
+  const vendorId = req.session.vendor.id;
+  const baseUrl = getBaseUrl();
+  const qrUrl = `${baseUrl}/menu/${vendorId}`;
+  
+  try {
+    await qrcode.toFile(`./uploads/qr_${vendorId}.png`, qrUrl, {
+      errorCorrectionLevel: 'H',
+      margin: 2,
+      width: 300
+    });
+    
+    const qrBase64 = await qrcode.toDataURL(qrUrl, {
+      errorCorrectionLevel: 'H',
+      margin: 2,
+      width: 300
+    });
+    
+    res.json({ success: true, qrBase64: qrBase64 });
+  } catch (err) {
+    console.error('QR regeneration error:', err);
+    res.status(500).json({ error: 'Failed to regenerate QR code' });
+  }
+});
+
 // Add menu item
 app.post('/api/vendor/add-menu-item', upload.single('photo'), async (req, res) => {
   if (!req.session.vendor) return res.status(401).json({ error: 'Not logged in' });
@@ -293,9 +343,7 @@ app.post('/api/vendor/update-order-status', async (req, res) => {
   }
 });
 
-// ============= ORDER TRACKING & NOTIFICATIONS =============
-
-// Place order (with push notification trigger)
+// Place order
 app.post('/api/place-order', async (req, res) => {
   const { vendor_id, customer_name, customer_phone, items, total, payment_method } = req.body;
   
@@ -307,28 +355,13 @@ app.post('/api/place-order', async (req, res) => {
       [vendor_id, orderNumber, customer_name, customer_phone, JSON.stringify(items), total, payment_method]
     );
     
-    // Get vendor info for push notification
-    const vendor = await queryOne(`SELECT business_name FROM vendors WHERE id = ?`, [vendor_id]);
-    
-    // Store pending notification (vendor will fetch on next poll)
-    const notification = {
-      vendor_id,
-      order_number: orderNumber,
-      customer_name: customer_name || 'Anonymous',
-      total,
-      message: `📢 New order #${orderNumber} from ${customer_name || 'Anonymous'} - R${total.toFixed(2)}`
-    };
-    
-    // Push notification will be sent when vendor polls for updates
-    // (See /api/vendor/check-notifications endpoint)
-    
     res.json({ success: true, order_number: orderNumber });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Vendor checks for new orders/notifications (for push alerts)
+// Check notifications
 app.get('/api/vendor/check-notifications', async (req, res) => {
   if (!req.session.vendor) return res.status(401).json({ error: 'Not logged in' });
   
@@ -345,7 +378,7 @@ app.get('/api/vendor/check-notifications', async (req, res) => {
   }
 });
 
-// Get order history
+// Order history
 app.get('/api/vendor/order-history', async (req, res) => {
   if (!req.session.vendor) return res.status(401).json({ error: 'Not logged in' });
   
@@ -362,8 +395,7 @@ app.get('/api/vendor/order-history', async (req, res) => {
   }
 });
 
-// ============= MENU API =============
-
+// Menu API
 app.get('/api/menu/:vendorId', async (req, res) => {
   const vendorId = req.params.vendorId;
   
@@ -378,7 +410,6 @@ app.get('/api/menu/:vendorId', async (req, res) => {
       [vendorId]
     );
     
-    // Get active sponsor ad
     const ad = await queryOne(
       `SELECT * FROM sponsor_ads WHERE is_active = 1 ORDER BY created_at DESC LIMIT 1`
     );
@@ -399,7 +430,6 @@ app.get('/api/menu/:vendorId', async (req, res) => {
 
 // ============= ADMIN ROUTES =============
 
-// Admin login
 app.post('/api/admin/login', async (req, res) => {
   const { username, password } = req.body;
   
@@ -450,9 +480,7 @@ app.post('/api/admin/toggle-vendor', async (req, res) => {
   }
 });
 
-// ============= AD MANAGEMENT (ADMIN) =============
-
-// Get all sponsor ads
+// Sponsor Ads
 app.get('/api/admin/sponsor-ads', async (req, res) => {
   if (!req.session.admin) return res.status(401).json({ error: 'Unauthorized' });
   
@@ -464,7 +492,6 @@ app.get('/api/admin/sponsor-ads', async (req, res) => {
   }
 });
 
-// Add sponsor ad
 app.post('/api/admin/add-sponsor-ad', upload.single('image'), async (req, res) => {
   if (!req.session.admin) return res.status(401).json({ error: 'Unauthorized' });
   
@@ -482,7 +509,6 @@ app.post('/api/admin/add-sponsor-ad', upload.single('image'), async (req, res) =
   }
 });
 
-// Delete sponsor ad
 app.delete('/api/admin/delete-sponsor-ad/:id', async (req, res) => {
   if (!req.session.admin) return res.status(401).json({ error: 'Unauthorized' });
   
@@ -496,7 +522,6 @@ app.delete('/api/admin/delete-sponsor-ad/:id', async (req, res) => {
   }
 });
 
-// Toggle sponsor ad
 app.post('/api/admin/toggle-sponsor-ad', async (req, res) => {
   if (!req.session.admin) return res.status(401).json({ error: 'Unauthorized' });
   
@@ -513,7 +538,6 @@ app.post('/api/admin/toggle-sponsor-ad', async (req, res) => {
   }
 });
 
-// Get admin stats
 app.get('/api/admin/stats', async (req, res) => {
   if (!req.session.admin) return res.status(401).json({ error: 'Unauthorized' });
   
