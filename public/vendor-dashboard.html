@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -17,9 +18,13 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
     }
     .header h1 { font-size: 20px; }
     .header .logout { background: rgba(255,255,255,0.2); padding: 8px 16px; border-radius: 10px; text-decoration: none; color: white; }
+    .header .feedback-link { background: rgba(255,255,255,0.2); padding: 8px 16px; border-radius: 10px; text-decoration: none; color: white; margin-right: 10px; }
+    
     .tab-bar {
       background: white;
       display: flex;
@@ -51,7 +56,6 @@
     }
     .card h2 { font-size: 18px; margin-bottom: 15px; }
     
-    /* Sales Summary */
     .sales-summary {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
@@ -81,26 +85,6 @@
       margin-top: 3px;
     }
     
-    .period-selector {
-      display: flex;
-      gap: 10px;
-      margin-bottom: 15px;
-    }
-    .period-btn {
-      padding: 8px 16px;
-      border: 2px solid #e0e0e0;
-      border-radius: 20px;
-      background: white;
-      cursor: pointer;
-      font-weight: 600;
-    }
-    .period-btn.active {
-      background: #667eea;
-      color: white;
-      border-color: #667eea;
-    }
-    
-    /* Orders */
     .order {
       border-left: 4px solid #667eea;
       padding: 15px;
@@ -190,6 +174,20 @@
       margin-top: 10px;
     }
     
+    .feedback-link-header {
+      background: rgba(255,255,255,0.15);
+      padding: 8px 16px;
+      border-radius: 10px;
+      text-decoration: none;
+      color: white;
+      margin-right: 10px;
+      font-size: 14px;
+      transition: background 0.2s;
+    }
+    .feedback-link-header:hover {
+      background: rgba(255,255,255,0.25);
+    }
+    
     @media (max-width: 600px) {
       .sales-summary { grid-template-columns: repeat(2, 1fr); }
       .menu-grid { grid-template-columns: repeat(2, 1fr); }
@@ -199,7 +197,11 @@
 <body>
   <div class="header">
     <h1>🔔 KheZwo Lite</h1>
-    <div><span id="businessName">Loading...</span> <a href="/api/vendor/logout" class="logout">Logout</a></div>
+    <div>
+      <a href="/contact.html" class="feedback-link-header">📬 Feedback</a>
+      <span id="businessName">Loading...</span>
+      <a href="/api/vendor/logout" class="logout">Logout</a>
+    </div>
   </div>
   
   <div class="notification-banner" id="notificationBanner">
@@ -417,7 +419,6 @@
           menuItems = data.menu_items || [];
           orders = data.orders || [];
           
-          // Load all orders for history
           const historyRes = await fetch('/api/vendor/order-history');
           const historyData = await historyRes.json();
           allOrders = [...orders, ...(historyData || [])];
@@ -427,7 +428,6 @@
           document.getElementById('profileOwner').value = vendorData.owner_name || '';
           document.getElementById('profilePhone').value = vendorData.phone || '';
           
-          // Check for new orders
           const pendingCount = orders.length;
           if (pendingCount > lastOrderCount && lastOrderCount > 0) {
             playNotificationSound();
@@ -502,7 +502,6 @@
       });
       if (res.ok) {
         loadData();
-        // Recalculate sales after completion
         setTimeout(updateSalesSummary, 500);
       }
     }
@@ -595,7 +594,6 @@
       });
     });
     
-    // Initial load and auto-refresh
     loadData();
     setInterval(() => {
       if (document.querySelector('.tab.active').dataset.tab === 'orders') loadData();
