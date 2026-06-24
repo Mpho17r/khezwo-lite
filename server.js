@@ -28,6 +28,18 @@ async function initDatabase() {
     console.log('🔄 Initializing database...');
     const client = await pool.connect();
     try {
+        // FIRST: Add missing is_active column to sponsor_ads if it doesn't exist
+        try {
+            await client.query(`
+                ALTER TABLE sponsor_ads ADD COLUMN IF NOT EXISTS is_active INTEGER DEFAULT 1
+            `);
+            console.log('✅ Added is_active column to sponsor_ads');
+        } catch (err) {
+            // Table might not exist yet, we'll create it below
+            console.log('sponsor_ads table may not exist yet, will create...');
+        }
+
+        // Create vendors table
         await client.query(`
             CREATE TABLE IF NOT EXISTS vendors (
                 id SERIAL PRIMARY KEY,
@@ -43,6 +55,7 @@ async function initDatabase() {
         `);
         console.log('✅ vendors table ready');
 
+        // Create menu_items table
         await client.query(`
             CREATE TABLE IF NOT EXISTS menu_items (
                 id SERIAL PRIMARY KEY,
@@ -57,6 +70,7 @@ async function initDatabase() {
         `);
         console.log('✅ menu_items table ready');
 
+        // Create orders table
         await client.query(`
             CREATE TABLE IF NOT EXISTS orders (
                 id SERIAL PRIMARY KEY,
@@ -73,6 +87,7 @@ async function initDatabase() {
         `);
         console.log('✅ orders table ready');
 
+        // Create admin_users table
         await client.query(`
             CREATE TABLE IF NOT EXISTS admin_users (
                 id SERIAL PRIMARY KEY,
@@ -82,6 +97,7 @@ async function initDatabase() {
         `);
         console.log('✅ admin_users table ready');
 
+        // Create sponsor_ads table (with is_active column)
         await client.query(`
             CREATE TABLE IF NOT EXISTS sponsor_ads (
                 id SERIAL PRIMARY KEY,
@@ -104,8 +120,8 @@ async function initDatabase() {
         `, [hashedPassword]);
 
         // Check vendors
-        const vendorCheck = await client.query(`SELECT id, business_name FROM vendors LIMIT 5`);
-        console.log(`📊 Vendors in database:`, vendorCheck.rows);
+        const vendorCheck = await client.query(`SELECT id, business_name FROM vendors`);
+        console.log(`📊 Vendors in database: ${vendorCheck.rows.length}`);
 
         console.log('✅ Lite tables ready in PostgreSQL');
     } catch (err) {
@@ -141,26 +157,21 @@ app.use(session({
 
 const getBaseUrl = () => process.env.BASE_URL || `http://localhost:${PORT}`;
 
-// ============= ROUTES =============
-
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// ============= CUSTOMER MENU ROUTE (FIXED) =============
+// ============= CUSTOMER MENU ROUTE =============
 app.get('/menu/:vendorId', async (req, res) => {
     try {
         const vendorId = req.params.vendorId;
         console.log(`🔍 Looking for vendor ID: ${vendorId}`);
         
-        // First, check if the vendor exists
         const vendor = await queryOne(`SELECT * FROM vendors WHERE id = $1`, [vendorId]);
         
         if (!vendor) {
-            console.log(`❌ Vendor ${vendorId} NOT found in database`);
-            // Let's check all vendors to see what IDs exist
+            console.log(`❌ Vendor ${vendorId} NOT found`);
             const allVendors = await query(`SELECT id, business_name FROM vendors LIMIT 10`);
-            console.log('📊 Existing vendor IDs:', allVendors.rows.map(v => v.id).join(', '));
             
             return res.status(404).send(`
                 <!DOCTYPE html>
@@ -180,7 +191,7 @@ app.get('/menu/:vendorId', async (req, res) => {
                         <h1>🍽️ Vendor Not Found</h1>
                         <p>The QR code you scanned is not valid or the vendor is no longer active.</p>
                         <div class="vendor-list">
-                            <p><strong>Available vendors in this system:</strong></p>
+                            <p><strong>Available vendors:</strong></p>
                             <p>${allVendors.rows.map(v => `ID ${v.id}: ${v.business_name}`).join('<br>') || 'No vendors found'}</p>
                         </div>
                         <a href="/" class="btn">Go Home</a>
@@ -198,9 +209,8 @@ app.get('/menu/:vendorId', async (req, res) => {
     }
 });
 
-// ============= VENDOR SIGNUP =============
+// ============= VENDOR ROUTES =============
 
-// Vendor Signup
 app.post('/api/vendor/signup', async (req, res) => {
     const { business_name, owner_name, email, phone, password } = req.body;
     
@@ -232,7 +242,6 @@ app.post('/api/vendor/signup', async (req, res) => {
     }
 });
 
-// Vendor Login
 app.post('/api/vendor/login', async (req, res) => {
     const { email, password } = req.body;
     
@@ -261,7 +270,6 @@ app.get('/api/vendor/logout', (req, res) => {
     res.redirect('/');
 });
 
-// Get vendor data
 app.get('/api/vendor/data', async (req, res) => {
     if (!req.session.vendor) return res.status(401).json({ error: 'Not logged in' });
     
@@ -326,7 +334,6 @@ app.get('/api/vendor/regenerate-qr', async (req, res) => {
     }
 });
 
-// Add menu item
 app.post('/api/vendor/add-menu-item', upload.single('photo'), async (req, res) => {
     if (!req.session.vendor) return res.status(401).json({ error: 'Not logged in' });
     
@@ -345,7 +352,6 @@ app.post('/api/vendor/add-menu-item', upload.single('photo'), async (req, res) =
     }
 });
 
-// Toggle availability
 app.post('/api/vendor/toggle-availability', async (req, res) => {
     if (!req.session.vendor) return res.status(401).json({ error: 'Not logged in' });
     
@@ -362,7 +368,6 @@ app.post('/api/vendor/toggle-availability', async (req, res) => {
     }
 });
 
-// Update vendor profile
 app.post('/api/vendor/update-profile', upload.single('logo'), async (req, res) => {
     if (!req.session.vendor) return res.status(401).json({ error: 'Not logged in' });
     
@@ -389,7 +394,6 @@ app.post('/api/vendor/update-profile', upload.single('logo'), async (req, res) =
     }
 });
 
-// Update order status
 app.post('/api/vendor/update-order-status', async (req, res) => {
     if (!req.session.vendor) return res.status(401).json({ error: 'Not logged in' });
     
@@ -406,7 +410,6 @@ app.post('/api/vendor/update-order-status', async (req, res) => {
     }
 });
 
-// Place order
 app.post('/api/place-order', async (req, res) => {
     const { vendor_id, customer_name, customer_phone, items, total, payment_method } = req.body;
     
@@ -424,7 +427,6 @@ app.post('/api/place-order', async (req, res) => {
     }
 });
 
-// Check notifications
 app.get('/api/vendor/check-notifications', async (req, res) => {
     if (!req.session.vendor) return res.status(401).json({ error: 'Not logged in' });
     
@@ -441,7 +443,6 @@ app.get('/api/vendor/check-notifications', async (req, res) => {
     }
 });
 
-// Order history
 app.get('/api/vendor/order-history', async (req, res) => {
     if (!req.session.vendor) return res.status(401).json({ error: 'Not logged in' });
     
@@ -458,7 +459,6 @@ app.get('/api/vendor/order-history', async (req, res) => {
     }
 });
 
-// Menu API
 app.get('/api/menu/:vendorId', async (req, res) => {
     const vendorId = req.params.vendorId;
     
@@ -562,7 +562,6 @@ app.post('/api/admin/toggle-vendor', async (req, res) => {
     }
 });
 
-// Sponsor Ads
 app.get('/api/admin/sponsor-ads', async (req, res) => {
     if (!req.session.admin) return res.status(401).json({ error: 'Unauthorized' });
     
