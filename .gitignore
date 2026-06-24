@@ -1,0 +1,6 @@
+node_modules/
+khezwo.db
+uploads/
+.DS_Store
+*.log
+.env

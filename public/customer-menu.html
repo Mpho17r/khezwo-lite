@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
+  <title>Menu - KheZwo Lite</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f8f9fa;
+      padding-bottom: 80px;
+    }
+    .header {
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      color: white;
+      padding: 30px 20px;
+      text-align: center;
+    }
+    .header .logo {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      background: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 15px;
+      overflow: hidden;
+    }
+    .header .logo img { width: 100%; height: 100%; object-fit: cover; }
+    .header .name { font-size: 24px; font-weight: 700; }
+    .header .status { font-size: 13px; opacity: 0.8; margin-top: 5px; }
+    
+    .menu-section { max-width: 600px; margin: 0 auto; padding: 20px; }
+    .menu-item {
+      background: white;
+      border-radius: 16px;
+      margin-bottom: 16px;
+      padding: 15px;
+      display: flex;
+      gap: 15px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    }
+    .menu-item img {
+      width: 80px;
+      height: 80px;
+      border-radius: 12px;
+      object-fit: cover;
+      background: #f0f0f0;
+    }
+    .menu-item .info { flex: 1; }
+    .menu-item .name { font-weight: 700; font-size: 16px; }
+    .menu-item .desc { font-size: 13px; color: #888; margin-top: 3px; }
+    .menu-item .price { font-weight: 700; color: #667eea; font-size: 18px; margin-top: 5px; }
+    .menu-item .add-btn {
+      background: #667eea;
+      color: white;
+      border: none;
+      padding: 6px 16px;
+      border-radius: 20px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+    .menu-item .add-btn:disabled { background: #ccc; cursor: not-allowed; }
+    .out-of-stock { color: #c33; font-size: 12px; font-weight: 600; }
+    
+    /* Ad Container */
+    .ad-container {
+      max-width: 600px;
+      margin: 20px auto;
+      padding: 10px;
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+      text-align: center;
+    }
+    .ad-container .label { font-size: 11px; color: #999; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+    .ad-container img { max-width: 100%; border-radius: 12px; }
+    .ad-container a { text-decoration: none; }
+    
+    /* Cart */
+    .cart-toggle {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: #667eea;
+      color: white;
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(102,126,234,0.4);
+      font-size: 24px;
+      border: none;
+    }
+    .cart-count {
+      position: absolute;
+      top: -5px;
+      right: -5px;
+      background: #ff5722;
+      border-radius: 50%;
+      width: 22px;
+      height: 22px;
+      font-size: 11px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .cart-panel {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: white;
+      border-radius: 20px 20px 0 0;
+      padding: 20px;
+      transform: translateY(100%);
+      transition: transform 0.3s;
+      z-index: 200;
+      max-height: 70vh;
+      overflow-y: auto;
+    }
+    .cart-panel.open { transform: translateY(0); }
+    .cart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+    .cart-item { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f0f0f0; }
+    .cart-total { font-size: 18px; font-weight: 700; text-align: right; padding: 15px 0; }
+    .checkout-btn {
+      width: 100%;
+      padding: 14px;
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      color: white;
+      border: none;
+      border-radius: 30px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .empty-cart { text-align: center; color: #999; padding: 40px; }
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 300;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-content {
+      background: white;
+      border-radius: 20px;
+      padding: 30px;
+      width: 90%;
+      max-width: 350px;
+      text-align: center;
+    }
+    .modal-content input, .modal-content select {
+      width: 100%;
+      padding: 12px;
+      margin: 10px 0;
+      border: 2px solid #e0e0e0;
+      border-radius: 12px;
+    }
+    .watermark { text-align: center; padding: 20px; font-size: 11px; color: #bbb; }
+    .loading { text-align: center; padding: 50px; color: #999; }
+  </style>
+</head>
+<body>
+  <div id="app"><div class="loading">Loading menu...</div></div>
+  <script>
+    let vendorData = null, menuItems = [], cart = [], vendorId = null;
+    vendorId = window.location.pathname.split('/')[2];
+    
+    async function loadMenu() {
+      try {
+        const res = await fetch(`/api/menu/${vendorId}`);
+        const data = await res.json();
+        if (res.ok) {
+          vendorData = data.vendor;
+          menuItems = data.menu_items || [];
+          render();
+        } else {
+          document.getElementById('app').innerHTML = '<div class="loading">Vendor not found</div>';
+        }
+      } catch(err) {
+        document.getElementById('app').innerHTML = '<div class="loading">Error loading menu</div>';
+      }
+    }
+    
+    function render() {
+      document.getElementById('app').innerHTML = `
+        <div class="header">
+          <div class="logo">${vendorData.logo_url ? `<img src="${vendorData.logo_url}">` : '🍽️'}</div>
+          <div class="name">${vendorData.business_name}</div>
+          <div class="status">● Open Now</div>
+        </div>
+        
+        <!-- Sponsor Ad (if active) -->
+        ${renderAd()}
+        
+        <div class="menu-section" id="menuList"></div>
+        <div class="watermark">Powered by KheZwo Lite ⚡</div>
+        
+        <button class="cart-toggle" onclick="toggleCart()">🛒<span id="cartBadge" class="cart-count" style="display:none;">0</span></button>
+        <div class="cart-panel" id="cartPanel">
+          <div class="cart-header"><h3>Your Order</h3><button onclick="toggleCart()" style="background:none;border:none;font-size:24px;">✕</button></div>
+          <div id="cartItems"></div>
+        </div>
+        
+        <div class="modal" id="checkoutModal">
+          <div class="modal-content">
+            <h3>Complete Order</h3>
+            <input type="text" id="customerName" placeholder="Your name">
+            <input type="tel" id="customerPhone" placeholder="Phone">
+            <select id="paymentMethod"><option value="cash">Cash</option><option value="card">Card</option></select>
+            <button onclick="submitOrder()" style="background:#667eea;color:white;border:none;padding:12px;border-radius:25px;width:100%;font-weight:600;">Place Order</button>
+            <button onclick="closeModal()" style="background:#ccc;border:none;padding:10px;border-radius:25px;width:100%;margin-top:10px;">Cancel</button>
+          </div>
+        </div>
+      `;
+      
+      const container = document.getElementById('menuList');
+      if (!menuItems.length) { container.innerHTML = '<div style="text-align:center;padding:50px;">No items available</div>'; return; }
+      container.innerHTML = menuItems.map(item => `
+        <div class="menu-item">
+          ${item.photo_url ? `<img src="${item.photo_url}">` : '<div style="width:80px;height:80px;border-radius:12px;background:#f0f0f0;display:flex;align-items:center;justify-content:center;font-size:32px;">🍽️</div>'}
+          <div class="info">
+            <div class="name">${item.name} ${!item.is_available ? '<span class="out-of-stock">(Out of Stock)</span>' : ''}</div>
+            <div class="desc">${item.description || ''}</div>
+            <div class="price">R${parseFloat(item.price).toFixed(2)}</div>
+            <button class="add-btn" onclick="addToCart(${item.id}, '${item.name}', ${item.price})" ${!item.is_available ? 'disabled' : ''}>
+              Add to Cart
+            </button>
+          </div>
+        </div>
+      `).join('');
+      renderCart();
+    }
+    
+    function renderAd() {
+      // Check if sponsor ad exists (will be passed from server)
+      // The ad data comes from the /api/menu response
+      const ad = window.sponsorAd;
+      if (ad && ad.image_url) {
+        return `
+          <div class="ad-container">
+            <div class="label">📢 Sponsored</div>
+            <a href="${ad.link_url || '#'}" target="_blank">
+              <img src="${ad.image_url}" alt="${ad.name || 'Advertisement'}">
+            </a>
+          </div>
+        `;
+      }
+      // Fallback: placeholder ad space
+      return `
+        <div class="ad-container">
+          <div class="label">📢 Advertisement</div>
+          <div style="padding:20px; background:#f5f5f5; border-radius:12px; color:#999;">
+            Ad space available<br>
+            <span style="font-size:12px;">Contact us to advertise here</span>
+          </div>
+        </div>
+      `;
+    }
+    
+    function addToCart(id, name, price) {
+      const existing = cart.find(i => i.id === id);
+      existing ? existing.quantity++ : cart.push({ id, name, price, quantity: 1 });
+      updateCartUI();
+    }
+    
+    function removeFromCart(id) {
+      const idx = cart.findIndex(i => i.id === id);
+      if (idx !== -1) {
+        if (cart[idx].quantity > 1) cart[idx].quantity--;
+        else cart.splice(idx, 1);
+      }
+      updateCartUI();
+    }
+    
+    function getCartCount() { return cart.reduce((s, i) => s + i.quantity, 0); }
+    
+    function updateCartUI() {
+      renderCart();
+      const count = getCartCount();
+      const badge = document.getElementById('cartBadge');
+      if (badge) { badge.textContent = count; badge.style.display = count > 0 ? 'flex' : 'none'; }
+    }
+    
+    function renderCart() {
+      const container = document.getElementById('cartItems');
+      if (!container) return;
+      if (!cart.length) { container.innerHTML = '<div class="empty-cart">Your cart is empty</div>'; return; }
+      const total = cart.reduce((s, i) => s + (i.price * i.quantity), 0);
+      container.innerHTML = cart.map(i => `
+        <div class="cart-item">
+          <div><strong>${i.name}</strong> x${i.quantity} - R${(i.price * i.quantity).toFixed(2)}</div>
+          <div>
+            <button onclick="removeFromCart(${i.id})" style="background:#fee;border:none;padding:2px 10px;border-radius:6px;cursor:pointer;">−</button>
+            <button onclick="addToCart(${i.id}, '${i.name}', ${i.price})" style="background:#e8f5e9;border:none;padding:2px 10px;border-radius:6px;cursor:pointer;">+</button>
+          </div>
+        </div>
+      `).join('') + `<div class="cart-total">Total: R${total.toFixed(2)}</div>
+      <button class="checkout-btn" onclick="openCheckout()">Proceed to Checkout →</button>`;
+    }
+    
+    function toggleCart() { document.getElementById('cartPanel').classList.toggle('open'); }
+    function openCheckout() { if (!cart.length) { alert('Cart empty'); return; } document.getElementById('checkoutModal').style.display = 'flex'; toggleCart(); }
+    function closeModal() { document.getElementById('checkoutModal').style.display = 'none'; }
+    
+    async function submitOrder() {
+      const name = document.getElementById('customerName').value;
+      const phone = document.getElementById('customerPhone').value;
+      const method = document.getElementById('paymentMethod').value;
+      if (!name) { alert('Enter your name'); return; }
+      const total = cart.reduce((s, i) => s + (i.price * i.quantity), 0);
+      const items = cart.map(i => ({ id: i.id, name: i.name, price: i.price, quantity: i.quantity }));
+      try {
+        const res = await fetch('/api/place-order', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ vendor_id: parseInt(vendorId), customer_name: name, customer_phone: phone, items, total, payment_method: method })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          alert(`✅ Order placed!\nOrder #: ${data.order_number}\nTotal: R${total.toFixed(2)}`);
+          cart = [];
+          updateCartUI();
+          closeModal();
+          toggleCart();
+        } else { alert('Error: ' + (data.error || 'Unknown')); }
+      } catch(err) { alert('Network error'); }
+    }
+    
+    // Store ad data from API response
+    // This is set by the server response - we'll add it to the window
+    loadMenu();
+  </script>
+</body>
+</html>

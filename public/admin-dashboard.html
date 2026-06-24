@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin - KheZwo Lite</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f5f5f5;
+    }
+    .header {
+      background: #1a1a2e;
+      color: white;
+      padding: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .header h1 { font-size: 20px; }
+    .header .logout { color: rgba(255,255,255,0.7); text-decoration: none; }
+    .content { padding: 20px; max-width: 800px; margin: 0 auto; }
+    .card {
+      background: white;
+      border-radius: 16px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    .card h2 { font-size: 18px; margin-bottom: 15px; }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+    .stat {
+      background: white;
+      border-radius: 16px;
+      padding: 20px;
+      text-align: center;
+    }
+    .stat .number { font-size: 28px; font-weight: 700; color: #667eea; }
+    .stat .label { font-size: 12px; color: #666; }
+    .ad-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 15px 0;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .ad-item img { width: 80px; height: 80px; border-radius: 10px; object-fit: cover; }
+    .btn {
+      background: #667eea;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 10px;
+      cursor: pointer;
+    }
+    .btn-danger { background: #c33; }
+    .btn-success { background: #4caf50; }
+    .form-group { margin-bottom: 15px; }
+    .form-group label { display: block; font-weight: 600; margin-bottom: 5px; font-size: 14px; }
+    .form-group input { width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 10px; }
+    .vendors-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    .vendors-table th, .vendors-table td { padding: 12px; text-align: left; border-bottom: 1px solid #f0f0f0; }
+    .vendors-table th { background: #f5f5f5; }
+    .tab-bar {
+      display: flex;
+      gap: 5px;
+      margin-bottom: 20px;
+      background: white;
+      border-radius: 12px;
+      padding: 5px;
+    }
+    .tab {
+      padding: 10px 20px;
+      border: none;
+      background: none;
+      font-weight: 600;
+      cursor: pointer;
+      border-radius: 10px;
+    }
+    .tab.active { background: #667eea; color: white; }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>KheZwo Lite Admin</h1>
+    <a href="/api/vendor/logout" class="logout">Logout</a>
+  </div>
+  
+  <div class="content">
+    <div class="stats" id="stats">
+      <div class="stat"><div class="number" id="totalVendors">-</div><div class="label">Vendors</div></div>
+      <div class="stat"><div class="number" id="totalOrders">-</div><div class="label">Total Orders</div></div>
+      <div class="stat"><div class="number" id="pendingOrders">-</div><div class="label">Pending</div></div>
+      <div class="stat"><div class="number" id="activeAds">-</div><div class="label">Active Ads</div></div>
+    </div>
+    
+    <div class="tab-bar">
+      <button class="tab active" data-tab="vendors">Vendors</button>
+      <button class="tab" data-tab="ads">Ad Management</button>
+    </div>
+    
+    <div id="vendors-tab" class="tab-content active">
+      <div class="card">
+        <h2>All Vendors</h2>
+        <table class="vendors-table" id="vendorsTable">
+          <thead><tr><th>ID</th><th>Business</th><th>Email</th><th>Orders</th><th>Status</th><th>Action</th></tr></thead>
+          <tbody id="vendorsList"></tbody>
+        </table>
+      </div>
+    </div>
+    
+    <div id="ads-tab" class="tab-content">
+      <div class="card">
+        <h2>Add Sponsor Ad</h2>
+        <form id="addAdForm" enctype="multipart/form-data">
+          <div class="form-group"><label>Business Name</label><input type="text" id="adName" required></div>
+          <div class="form-group"><label>Ad Image</label><input type="file" id="adImage" accept="image/*" required></div>
+          <div class="form-group"><label>Link URL</label><input type="url" id="adLink" placeholder="https://business.com"></div>
+          <button type="submit" class="btn">Add Ad</button>
+        </form>
+      </div>
+      <div class="card">
+        <h2>Active Sponsor Ads</h2>
+        <div id="adsList"></div>
+      </div>
+    </div>
+  </div>
+  
+  <script>
+    let currentTab = 'vendors';
+    
+    async function loadStats() {
+      const res = await fetch('/api/admin/stats');
+      const data = await res.json();
+      document.getElementById('totalVendors').textContent = data.total_vendors || 0;
+      document.getElementById('totalOrders').textContent = data.total_orders || 0;
+      document.getElementById('pendingOrders').textContent = data.pending_orders || 0;
+      document.getElementById('activeAds').textContent = data.active_ads || 0;
+    }
+    
+    async function loadVendors() {
+      const res = await fetch('/api/admin/vendors');
+      const vendors = await res.json();
+      const tbody = document.getElementById('vendorsList');
+      if (!vendors || !vendors.length) {
+        tbody.innerHTML = '<tr><td colspan="6">No vendors yet</td></tr>';
+        return;
+      }
+      tbody.innerHTML = vendors.map(v => `
+        <tr>
+          <td>${v.id}</td>
+          <td>${v.business_name}</td>
+          <td>${v.email}</td>
+          <td>${v.total_orders || 0}</td>
+          <td>${v.is_suspended ? '🔴 Suspended' : '🟢 Active'}</td>
+          <td><button onclick="toggleVendor(${v.id}, ${v.is_suspended})" class="btn btn-${v.is_suspended ? 'success' : 'danger'}">${v.is_suspended ? 'Unsuspend' : 'Suspend'}</button></td>
+        </tr>
+      `).join('');
+    }
+    
+    async function toggleVendor(id, current) {
+      if (!confirm(`Sure you want to ${current ? 'unsuspend' : 'suspend'} this vendor?`)) return;
+      await fetch('/api/admin/toggle-vendor', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vendor_id: id, is_suspended: current ? 0 : 1 })
+      });
+      loadVendors();
+    }
+    
+    async function loadAds() {
+      const res = await fetch('/api/admin/sponsor-ads');
+      const ads = await res.json();
+      const container = document.getElementById('adsList');
+      if (!ads || !ads.length) {
+        container.innerHTML = '<p>No sponsor ads yet</p>';
+        return;
+      }
+      container.innerHTML = ads.map(ad => `
+        <div class="ad-item">
+          <div>${ad.image_url ? `<img src="${ad.image_url}">` : '📢'}</div>
+          <div><strong>${ad.name}</strong><br>${ad.link_url || 'No link'}</div>
+          <div>${ad.is_active ? '🟢 Active' : '🔴 Inactive'}</div>
+          <div>
+            <button onclick="toggleAd(${ad.id}, ${ad.is_active})" class="btn btn-${ad.is_active ? 'danger' : 'success'}">${ad.is_active ? 'Disable' : 'Enable'}</button>
+            <button onclick="deleteAd(${ad.id})" class="btn btn-danger">Delete</button>
+          </div>
+        </div>
+      `).join('');
+    }
+    
+    async function toggleAd(id, current) {
+      await fetch('/api/admin/toggle-sponsor-ad', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ad_id: id, is_active: current ? 0 : 1 })
+      });
+      loadAds();
+    }
+    
+    async function deleteAd(id) {
+      if (!confirm('Delete this ad?')) return;
+      await fetch(`/api/admin/delete-sponsor-ad/${id}`, { method: 'DELETE' });
+      loadAds();
+    }
+    
+    document.getElementById('addAdForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData();
+      fd.append('name', document.getElementById('adName').value);
+      fd.append('link_url', document.getElementById('adLink').value);
+      const img = document.getElementById('adImage').files[0];
+      if (img) fd.append('image', img);
+      await fetch('/api/admin/add-sponsor-ad', { method: 'POST', body: fd });
+      document.getElementById('addAdForm').reset();
+      loadAds();
+      loadStats();
+    });
+    
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        tab.classList.add('active');
+        document.getElementById(tab.dataset.tab + '-tab').classList.add('active');
+        if (tab.dataset.tab === 'ads') loadAds();
+        if (tab.dataset.tab === 'vendors') loadVendors();
+      });
+    });
+    
+    loadStats();
+    loadVendors();
+    loadAds();
+  </script>
+</body>
+</html>
