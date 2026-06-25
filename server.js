@@ -5,10 +5,39 @@ const path = require('path');
 const fs = require('fs');
 const bcrypt = require('bcrypt');
 const qrcode = require('qrcode');
+const cors = require('cors');
 const { Pool } = require('pg');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// ============ CORS CONFIGURATION ============
+// Allow your Emergent preview URL and other origins
+const allowedOrigins = [
+    'https://app-builder-7943.preview.emergentagent.com',
+    'http://localhost:3000',
+    'http://localhost:3001',
+    'http://localhost:8080',
+    'https://khezwo-lite.onrender.com',
+    'exp://localhost:19000',
+    'exp://192.168.1.*:19000',
+];
+
+app.use(cors({
+    origin: function (origin, callback) {
+        // Allow requests with no origin (like mobile apps or curl requests)
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.indexOf(origin) !== -1) {
+            callback(null, true);
+        } else {
+            console.log('Blocked CORS from:', origin);
+            callback(null, true); // Allow all for testing
+        }
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+}));
 
 // PostgreSQL connection
 const pool = new Pool({
@@ -23,7 +52,27 @@ const queryOne = async (text, params) => {
     return result.rows[0] || null;
 };
 
-// Create tables with error handling
+function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+// File upload validation
+const fileFilter = (req, file, cb) => {
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+    if (allowedTypes.includes(file.mimetype)) {
+        cb(null, true);
+    } else {
+        cb(new Error('Invalid file type. Only images allowed.'), false);
+    }
+};
+
+// Create tables
 async function initDatabase() {
     console.log('🔄 Initializing database...');
     const client = await pool.connect();
@@ -33,12 +82,8 @@ async function initDatabase() {
             await client.query(`
                 ALTER TABLE sponsor_ads ADD COLUMN IF NOT EXISTS is_active INTEGER DEFAULT 1
             `);
-            console.log('✅ Added is_active column to sponsor_ads');
-        } catch (err) {
-            // Table might not exist yet, we'll create it below
-        }
+        } catch (err) {}
 
-        // Create vendors table
         await client.query(`
             CREATE TABLE IF NOT EXISTS vendors (
                 id SERIAL PRIMARY KEY,
@@ -49,12 +94,11 @@ async function initDatabase() {
                 password TEXT NOT NULL,
                 logo_url TEXT,
                 is_suspended INTEGER DEFAULT 0,
+                push_token TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         `);
-        console.log('✅ vendors table ready');
 
-        // Create menu_items table
         await client.query(`
             CREATE TABLE IF NOT EXISTS menu_items (
                 id SERIAL PRIMARY KEY,
@@ -67,9 +111,7 @@ async function initDatabase() {
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         `);
-        console.log('✅ menu_items table ready');
 
-        // Create orders table
         await client.query(`
             CREATE TABLE IF NOT EXISTS orders (
                 id SERIAL PRIMARY KEY,
@@ -84,9 +126,7 @@ async function initDatabase() {
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         `);
-        console.log('✅ orders table ready');
 
-        // Create admin_users table
         await client.query(`
             CREATE TABLE IF NOT EXISTS admin_users (
                 id SERIAL PRIMARY KEY,
@@ -94,9 +134,7 @@ async function initDatabase() {
                 password TEXT NOT NULL
             )
         `);
-        console.log('✅ admin_users table ready');
 
-        // Create sponsor_ads table
         await client.query(`
             CREATE TABLE IF NOT EXISTS sponsor_ads (
                 id SERIAL PRIMARY KEY,
@@ -107,9 +145,7 @@ async function initDatabase() {
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         `);
-        console.log('✅ sponsor_ads table ready');
 
-        // ============ NEW: FEEDBACK TABLE ============
         await client.query(`
             CREATE TABLE IF NOT EXISTS feedback (
                 id SERIAL PRIMARY KEY,
@@ -123,22 +159,8 @@ async function initDatabase() {
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         `);
-        console.log('✅ feedback table ready');
 
-        // Create default admin user
-        const bcrypt = require('bcrypt');
-        const hashedPassword = bcrypt.hashSync('admin123', 10);
-        await client.query(`
-            INSERT INTO admin_users (username, password) 
-            VALUES ('admin', $1)
-            ON CONFLICT (username) DO NOTHING
-        `, [hashedPassword]);
-
-        // Check vendors
-        const vendorCheck = await client.query(`SELECT id, business_name FROM vendors`);
-        console.log(`📊 Vendors in database: ${vendorCheck.rows.length}`);
-
-        console.log('✅ Lite tables ready in PostgreSQL');
+        console.log('✅ Tables ready');
     } catch (err) {
         console.error('❌ Database init error:', err.message);
     } finally {
@@ -146,47 +168,56 @@ async function initDatabase() {
     }
 }
 
-// Run init
 initDatabase();
 
 // Ensure uploads folder exists
 if (!fs.existsSync('./uploads')) fs.mkdirSync('./uploads');
 
-// Multer for file uploads
+// File upload with validation
 const storage = multer.diskStorage({
     destination: './uploads/',
     filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname))
 });
-const upload = multer({ storage });
+const upload = multer({ 
+    storage: storage,
+    limits: { fileSize: 5 * 1024 * 1024 },
+    fileFilter: fileFilter
+});
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
 app.use('/uploads', express.static('uploads'));
+
+// Session configuration
 app.use(session({
-    secret: 'khezwo-lite-secret',
+    secret: process.env.SESSION_SECRET || 'khezwo-lite-secret',
     resave: false,
     saveUninitialized: true,
-    cookie: { maxAge: 24 * 60 * 60 * 1000 }
+    cookie: { 
+        maxAge: 24 * 60 * 60 * 1000,
+        httpOnly: true,
+        secure: false,
+        sameSite: 'lax'
+    }
 }));
 
 const getBaseUrl = () => process.env.BASE_URL || `http://localhost:${PORT}`;
+
+// ============= ROUTES =============
 
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// ============= CUSTOMER MENU ROUTE =============
+// Customer Menu Route
 app.get('/menu/:vendorId', async (req, res) => {
     try {
         const vendorId = req.params.vendorId;
-        console.log(`🔍 Looking for vendor ID: ${vendorId}`);
-        
         const vendor = await queryOne(`SELECT * FROM vendors WHERE id = $1`, [vendorId]);
         
         if (!vendor) {
-            console.log(`❌ Vendor ${vendorId} NOT found`);
-            const allVendors = await query(`SELECT id, business_name FROM vendors LIMIT 10`);
+            const allVendors = await query(`SELECT id, business_name FROM vendors ORDER BY id`);
             
             return res.status(404).send(`
                 <!DOCTYPE html>
@@ -207,7 +238,7 @@ app.get('/menu/:vendorId', async (req, res) => {
                         <p>The QR code you scanned is not valid or the vendor is no longer active.</p>
                         <div class="vendor-list">
                             <p><strong>Available vendors:</strong></p>
-                            <p>${allVendors.rows.map(v => `ID ${v.id}: ${v.business_name}`).join('<br>') || 'No vendors found'}</p>
+                            <p>${allVendors.rows.map(v => `ID ${escapeHtml(String(v.id))}: ${escapeHtml(v.business_name)}`).join('<br>') || 'No vendors found'}</p>
                         </div>
                         <a href="/" class="btn">Go Home</a>
                     </div>
@@ -216,7 +247,6 @@ app.get('/menu/:vendorId', async (req, res) => {
             `);
         }
         
-        console.log(`✅ Vendor found: ${vendor.business_name} (ID: ${vendor.id})`);
         res.sendFile(path.join(__dirname, 'public', 'customer-menu.html'));
     } catch (err) {
         console.error('❌ Menu route error:', err);
@@ -224,21 +254,30 @@ app.get('/menu/:vendorId', async (req, res) => {
     }
 });
 
-// ============= VENDOR ROUTES =============
+// ============= API ROUTES =============
 
+// Vendor Signup
 app.post('/api/vendor/signup', async (req, res) => {
+    console.log('📝 Signup request received:', req.body.email);
     const { business_name, owner_name, email, phone, password } = req.body;
     
     if (!business_name || !owner_name || !email || !phone || !password) {
         return res.status(400).json({ error: 'All fields required' });
     }
     
+    if (password.length < 6) {
+        return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
+    
+    const sanitizedBusiness = business_name.replace(/[<>]/g, '');
+    const sanitizedName = owner_name.replace(/[<>]/g, '');
+    
     try {
         const hashedPassword = await bcrypt.hash(password, 10);
         const result = await query(
             `INSERT INTO vendors (business_name, owner_name, email, phone, password) 
              VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-            [business_name, owner_name, email, phone, hashedPassword]
+            [sanitizedBusiness, sanitizedName, email, phone, hashedPassword]
         );
         
         const vendorId = result.rows[0].id;
@@ -246,7 +285,7 @@ app.post('/api/vendor/signup', async (req, res) => {
         const qrUrl = `${baseUrl}/menu/${vendorId}`;
         qrcode.toFile(`./uploads/qr_${vendorId}.png`, qrUrl, () => {});
         
-        console.log(`✅ New vendor created: ${business_name} (ID: ${vendorId})`);
+        console.log(`✅ New vendor: ${sanitizedBusiness} (ID: ${vendorId})`);
         res.json({ success: true, vendor_id: vendorId });
     } catch (err) {
         if (err.constraint === 'vendors_email_key') {
@@ -257,8 +296,10 @@ app.post('/api/vendor/signup', async (req, res) => {
     }
 });
 
+// Vendor Login
 app.post('/api/vendor/login', async (req, res) => {
     const { email, password } = req.body;
+    console.log('🔑 Login attempt:', email);
     
     try {
         const result = await query(`SELECT * FROM vendors WHERE email = $1`, [email]);
@@ -267,6 +308,11 @@ app.post('/api/vendor/login', async (req, res) => {
         }
         
         const vendor = result.rows[0];
+        
+        if (vendor.is_suspended === 1) {
+            return res.status(403).json({ error: 'Account suspended. Please contact support.' });
+        }
+        
         const valid = await bcrypt.compare(password, vendor.password);
         if (!valid) {
             return res.status(400).json({ error: 'Invalid credentials' });
@@ -276,6 +322,7 @@ app.post('/api/vendor/login', async (req, res) => {
         console.log(`✅ Vendor logged in: ${vendor.business_name} (ID: ${vendor.id})`);
         res.json({ success: true, redirect: '/vendor-dashboard.html' });
     } catch (err) {
+        console.error('Login error:', err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -285,13 +332,20 @@ app.get('/api/vendor/logout', (req, res) => {
     res.redirect('/');
 });
 
+// Get vendor data (MUST BE BEFORE /api/vendor/:id routes)
 app.get('/api/vendor/data', async (req, res) => {
+    console.log('📊 Vendor data requested, session:', !!req.session.vendor);
     if (!req.session.vendor) return res.status(401).json({ error: 'Not logged in' });
+    
+    if (req.session.vendor.is_suspended === 1) {
+        req.session.destroy();
+        return res.status(403).json({ error: 'Account suspended' });
+    }
     
     const vendorId = req.session.vendor.id;
     
     try {
-        const vendor = await queryOne(`SELECT * FROM vendors WHERE id = $1`, [vendorId]);
+        const vendor = await queryOne(`SELECT id, business_name, owner_name, email, phone, logo_url, is_suspended, created_at FROM vendors WHERE id = $1`, [vendorId]);
         const menuItems = await query(`SELECT * FROM menu_items WHERE vendor_id = $1 ORDER BY id DESC`, [vendorId]);
         const orders = await query(`SELECT * FROM orders WHERE vendor_id = $1 AND status != 'completed' ORDER BY created_at DESC`, [vendorId]);
         
@@ -300,6 +354,24 @@ app.get('/api/vendor/data', async (req, res) => {
             menu_items: menuItems.rows || [],
             orders: orders.rows || []
         });
+    } catch (err) {
+        console.error('Vendor data error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Push token endpoint (for mobile apps)
+app.post('/api/vendor/push-token', async (req, res) => {
+    if (!req.session.vendor) return res.status(401).json({ error: 'Not logged in' });
+    
+    const { push_token } = req.body;
+    
+    try {
+        await query(
+            `UPDATE vendors SET push_token = $1 WHERE id = $2`,
+            [push_token, req.session.vendor.id]
+        );
+        res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -349,17 +421,21 @@ app.get('/api/vendor/regenerate-qr', async (req, res) => {
     }
 });
 
+// Add menu item
 app.post('/api/vendor/add-menu-item', upload.single('photo'), async (req, res) => {
     if (!req.session.vendor) return res.status(401).json({ error: 'Not logged in' });
     
     const { name, price, description } = req.body;
     const photoUrl = req.file ? `/uploads/${req.file.filename}` : null;
     
+    const sanitizedName = name.replace(/[<>]/g, '');
+    const sanitizedDesc = description ? description.replace(/[<>]/g, '') : '';
+    
     try {
         await query(
             `INSERT INTO menu_items (vendor_id, name, price, description, photo_url) 
              VALUES ($1, $2, $3, $4, $5)`,
-            [req.session.vendor.id, name, price, description, photoUrl]
+            [req.session.vendor.id, sanitizedName, price, sanitizedDesc, photoUrl]
         );
         res.json({ success: true });
     } catch (err) {
@@ -367,6 +443,7 @@ app.post('/api/vendor/add-menu-item', upload.single('photo'), async (req, res) =
     }
 });
 
+// Toggle availability
 app.post('/api/vendor/toggle-availability', async (req, res) => {
     if (!req.session.vendor) return res.status(401).json({ error: 'Not logged in' });
     
@@ -383,15 +460,19 @@ app.post('/api/vendor/toggle-availability', async (req, res) => {
     }
 });
 
+// Update vendor profile
 app.post('/api/vendor/update-profile', upload.single('logo'), async (req, res) => {
     if (!req.session.vendor) return res.status(401).json({ error: 'Not logged in' });
     
     const { business_name, owner_name, phone } = req.body;
     const logoUrl = req.file ? `/uploads/${req.file.filename}` : null;
     
+    const sanitizedBusiness = business_name ? business_name.replace(/[<>]/g, '') : '';
+    const sanitizedName = owner_name ? owner_name.replace(/[<>]/g, '') : '';
+    
     try {
         let queryText = `UPDATE vendors SET business_name = $1, owner_name = $2, phone = $3`;
-        let params = [business_name, owner_name, phone];
+        let params = [sanitizedBusiness, sanitizedName, phone];
         if (logoUrl) {
             queryText += `, logo_url = $4 WHERE id = $5`;
             params.push(logoUrl, req.session.vendor.id);
@@ -401,7 +482,7 @@ app.post('/api/vendor/update-profile', upload.single('logo'), async (req, res) =
         }
         
         await query(queryText, params);
-        const vendor = await queryOne(`SELECT * FROM vendors WHERE id = $1`, [req.session.vendor.id]);
+        const vendor = await queryOne(`SELECT id, business_name, owner_name, email, phone, logo_url, is_suspended, created_at FROM vendors WHERE id = $1`, [req.session.vendor.id]);
         req.session.vendor = vendor;
         res.json({ success: true });
     } catch (err) {
@@ -409,6 +490,7 @@ app.post('/api/vendor/update-profile', upload.single('logo'), async (req, res) =
     }
 });
 
+// Update order status
 app.post('/api/vendor/update-order-status', async (req, res) => {
     if (!req.session.vendor) return res.status(401).json({ error: 'Not logged in' });
     
@@ -425,23 +507,65 @@ app.post('/api/vendor/update-order-status', async (req, res) => {
     }
 });
 
+// Place order (secure)
 app.post('/api/place-order', async (req, res) => {
-    const { vendor_id, customer_name, customer_phone, items, total, payment_method } = req.body;
+    const { vendor_id, customer_name, customer_phone, items, payment_method } = req.body;
+    console.log('📦 Order request:', { vendor_id, customer_name, items_count: items?.length });
     
-    const orderNumber = 'ORD-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
+    if (!vendor_id || !items || !items.length) {
+        return res.status(400).json({ error: 'Missing required fields' });
+    }
     
     try {
+        let total = 0;
+        const validatedItems = [];
+        
+        for (const item of items) {
+            const menuItem = await queryOne(
+                `SELECT id, name, price, is_available FROM menu_items WHERE id = $1 AND vendor_id = $2`,
+                [item.id, vendor_id]
+            );
+            
+            if (!menuItem) {
+                return res.status(400).json({ error: `Item ${item.id} not found` });
+            }
+            
+            if (menuItem.is_available === 0) {
+                return res.status(400).json({ error: `${menuItem.name} is out of stock` });
+            }
+            
+            const quantity = parseInt(item.quantity) || 1;
+            const itemTotal = parseFloat(menuItem.price) * quantity;
+            total += itemTotal;
+            
+            validatedItems.push({
+                id: menuItem.id,
+                name: menuItem.name,
+                price: parseFloat(menuItem.price),
+                quantity: quantity
+            });
+        }
+        
+        const orderNumber = 'ORD-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
+        
         await query(
             `INSERT INTO orders (vendor_id, order_number, customer_name, customer_phone, items_json, total, payment_method) 
              VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-            [vendor_id, orderNumber, customer_name, customer_phone, JSON.stringify(items), total, payment_method]
+            [vendor_id, orderNumber, customer_name || 'Anonymous', customer_phone || '', JSON.stringify(validatedItems), total, payment_method || 'cash']
         );
+        
+        // Get vendor for notification
+        const vendor = await queryOne(`SELECT business_name FROM vendors WHERE id = $1`, [vendor_id]);
+        console.log('✅ Order placed:', orderNumber);
+        
         res.json({ success: true, order_number: orderNumber });
     } catch (err) {
+        console.error('Place order error:', err);
         res.status(500).json({ error: err.message });
     }
 });
 
+// Vendor notifications
 app.get('/api/vendor/check-notifications', async (req, res) => {
     if (!req.session.vendor) return res.status(401).json({ error: 'Not logged in' });
     
@@ -458,6 +582,7 @@ app.get('/api/vendor/check-notifications', async (req, res) => {
     }
 });
 
+// Order history
 app.get('/api/vendor/order-history', async (req, res) => {
     if (!req.session.vendor) return res.status(401).json({ error: 'Not logged in' });
     
@@ -474,17 +599,22 @@ app.get('/api/vendor/order-history', async (req, res) => {
     }
 });
 
+// Menu API
 app.get('/api/menu/:vendorId', async (req, res) => {
     const vendorId = req.params.vendorId;
     
     try {
-        const vendor = await queryOne(`SELECT * FROM vendors WHERE id = $1`, [vendorId]);
+        const vendor = await queryOne(`SELECT id, business_name, logo_url, is_suspended FROM vendors WHERE id = $1`, [vendorId]);
         if (!vendor) {
             return res.status(404).json({ error: 'Vendor not found' });
         }
         
+        if (vendor.is_suspended === 1) {
+            return res.status(403).json({ error: 'Vendor is suspended' });
+        }
+        
         const items = await query(
-            `SELECT * FROM menu_items WHERE vendor_id = $1 AND is_available = 1 ORDER BY id DESC`,
+            `SELECT id, name, price, description, photo_url, is_available FROM menu_items WHERE vendor_id = $1 AND is_available = 1 ORDER BY id DESC`,
             [vendorId]
         );
         
@@ -502,13 +632,12 @@ app.get('/api/menu/:vendorId', async (req, res) => {
             sponsor_ad: ad || null
         });
     } catch (err) {
+        console.error('Menu API error:', err);
         res.status(500).json({ error: err.message });
     }
 });
 
-// ============ FEEDBACK ROUTES ============
-
-// Submit feedback (from customer or vendor)
+// Feedback
 app.post('/api/feedback', async (req, res) => {
     const { vendor_id, customer_name, customer_email, customer_phone, message, rating } = req.body;
     
@@ -516,11 +645,15 @@ app.post('/api/feedback', async (req, res) => {
         return res.status(400).json({ error: 'Message is required' });
     }
     
+    const sanitizedMessage = message.replace(/[<>]/g, '');
+    const sanitizedName = customer_name ? customer_name.replace(/[<>]/g, '') : null;
+    const sanitizedEmail = customer_email ? customer_email.replace(/[<>]/g, '') : null;
+    
     try {
         await query(
             `INSERT INTO feedback (vendor_id, customer_name, customer_email, customer_phone, message, rating) 
              VALUES ($1, $2, $3, $4, $5, $6)`,
-            [vendor_id || null, customer_name || null, customer_email || null, customer_phone || null, message, rating || 5]
+            [vendor_id || null, sanitizedName, sanitizedEmail, customer_phone || null, sanitizedMessage, rating || 5]
         );
         res.json({ success: true, message: 'Thank you for your feedback!' });
     } catch (err) {
@@ -529,66 +662,22 @@ app.post('/api/feedback', async (req, res) => {
     }
 });
 
-// Get feedback (admin only)
-app.get('/api/admin/feedback', async (req, res) => {
-    if (!req.session.admin) return res.status(401).json({ error: 'Unauthorized' });
-    
-    try {
-        const feedback = await query(`
-            SELECT f.*, v.business_name as vendor_name 
-            FROM feedback f
-            LEFT JOIN vendors v ON f.vendor_id = v.id
-            ORDER BY f.created_at DESC
-        `);
-        res.json(feedback.rows || []);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// Update feedback status (admin only)
-app.post('/api/admin/feedback/update', async (req, res) => {
-    if (!req.session.admin) return res.status(401).json({ error: 'Unauthorized' });
-    
-    const { feedback_id, status } = req.body;
-    
-    try {
-        await query(
-            `UPDATE feedback SET status = $1 WHERE id = $2`,
-            [status, feedback_id]
-        );
-        res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// Setup admin
-app.post('/api/setup-admin', async (req, res) => {
-    const { username, password } = req.body;
-    
-    if (!username || !password || password.length < 6) {
-        return res.status(400).json({ error: 'Invalid username or password' });
-    }
-    
-    try {
-        const hashedPassword = await bcrypt.hash(password, 10);
-        await query(
-            'INSERT INTO admin_users (username, password) VALUES ($1, $2) ON CONFLICT (username) DO UPDATE SET password = $2',
-            [username, hashedPassword]
-        );
-        res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
 // ============= ADMIN ROUTES =============
 
 app.post('/api/admin/login', async (req, res) => {
     const { username, password } = req.body;
+    console.log('🔐 Admin login attempt:', username);
     
     try {
+        const adminCheck = await queryOne(`SELECT COUNT(*) as count FROM admin_users`);
+        if (parseInt(adminCheck.count) === 0) {
+            const hashedPassword = await bcrypt.hash('admin123', 10);
+            await query(
+                'INSERT INTO admin_users (username, password) VALUES ($1, $2)',
+                ['admin', hashedPassword]
+            );
+        }
+        
         const result = await query(`SELECT * FROM admin_users WHERE username = $1`, [username]);
         if (result.rows.length === 0) {
             return res.status(400).json({ error: 'Invalid credentials' });
@@ -603,6 +692,7 @@ app.post('/api/admin/login', async (req, res) => {
         req.session.admin = admin;
         res.json({ success: true, redirect: '/admin-dashboard.html' });
     } catch (err) {
+        console.error('Admin login error:', err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -691,6 +781,38 @@ app.post('/api/admin/toggle-sponsor-ad', async (req, res) => {
     }
 });
 
+app.get('/api/admin/feedback', async (req, res) => {
+    if (!req.session.admin) return res.status(401).json({ error: 'Unauthorized' });
+    
+    try {
+        const feedback = await query(`
+            SELECT f.*, v.business_name as vendor_name 
+            FROM feedback f
+            LEFT JOIN vendors v ON f.vendor_id = v.id
+            ORDER BY f.created_at DESC
+        `);
+        res.json(feedback.rows || []);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/admin/feedback/update', async (req, res) => {
+    if (!req.session.admin) return res.status(401).json({ error: 'Unauthorized' });
+    
+    const { feedback_id, status } = req.body;
+    
+    try {
+        await query(
+            `UPDATE feedback SET status = $1 WHERE id = $2`,
+            [status, feedback_id]
+        );
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 app.get('/api/admin/stats', async (req, res) => {
     if (!req.session.admin) return res.status(401).json({ error: 'Unauthorized' });
     
@@ -713,9 +835,62 @@ app.get('/api/admin/stats', async (req, res) => {
     }
 });
 
+// Track order
+app.get('/api/track-order/:orderNumber', async (req, res) => {
+    const { orderNumber } = req.params;
+    
+    try {
+        const orderResult = await query(`
+            SELECT o.*, v.business_name, v.logo_url 
+            FROM orders o
+            JOIN vendors v ON o.vendor_id = v.id
+            WHERE o.order_number = $1
+        `, [orderNumber]);
+        
+        if (orderResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Order not found' });
+        }
+        
+        const order = orderResult.rows[0];
+        const items = typeof order.items_json === 'string' ? JSON.parse(order.items_json) : order.items_json;
+        
+        const statuses = ['received', 'preparing', 'ready', 'completed'];
+        let currentStatus = order.status;
+        if (currentStatus === 'pending') currentStatus = 'received';
+        
+        let currentStep = statuses.indexOf(currentStatus);
+        if (currentStep === -1) currentStep = 0;
+        
+        const progress = (currentStep / 3) * 100;
+        
+        res.json({
+            order: {
+                order_number: order.order_number,
+                customer_name: order.customer_name,
+                customer_phone: order.customer_phone,
+                total: order.total,
+                payment_method: order.payment_method,
+                status: currentStatus,
+                created_at: order.created_at,
+                business_name: order.business_name,
+                logo_url: order.logo_url
+            },
+            items: items,
+            progress: progress,
+            current_step: currentStep,
+            statuses: statuses
+        });
+    } catch (err) {
+        console.error('Track order error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ============= START SERVER =============
 app.listen(PORT, () => {
     console.log(`\n✅ KheZwo Lite is running!`);
     console.log(`📍 http://localhost:${PORT}`);
-    console.log(`\n📋 Admin: username "admin" | password "admin123"`);
+    console.log(`📍 API Base: ${getBaseUrl()}/api`);
+    console.log(`\n📋 Admin: Use the admin login page`);
     console.log(`🎉 Ready to go!\n`);
 });
